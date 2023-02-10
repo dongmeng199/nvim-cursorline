@@ -9,11 +9,6 @@ local au = a.nvim_create_autocmd
 local timer = vim.loop.new_timer()
 
 local DEFAULT_OPTIONS = {
-  cursorline = {
-    enable = true,
-    timeout = 1000,
-    number = false,
-  },
   cursorword = {
     enable = true,
     min_length = 3,
@@ -22,72 +17,47 @@ local DEFAULT_OPTIONS = {
 }
 
 local function matchadd()
-  local column = a.nvim_win_get_cursor(0)[2]
-  local line = a.nvim_get_current_line()
-  local cursorword = fn.matchstr(line:sub(1, column + 1), [[\k*$]])
-    .. fn.matchstr(line:sub(column + 1), [[^\k*]]):sub(2)
+  local cword = vim.fn.expand('<cword>')
+  local row, col = unpack(a.nvim_win_get_cursor(0))
+  w.ccword = cword
 
-  if cursorword == w.cursorword then
-    return
-  end
-  w.cursorword = cursorword
+ if cword == w.cursorword and row == w.row and col >= w.cwordStart and col <= w.cwordEnd
+   then
+   return
+ end
+
+  local s, e = a.nvim_get_current_line():find(cword, math.max(1, col-#cword))
+
+  w.cursorword = cword
+  w.row = row
+  w.cwordStart = s
+  w.cwordEnd = e
+
+
   if w.cursorword_id then
     vim.call("matchdelete", w.cursorword_id)
     w.cursorword_id = nil
   end
+
   if
-    cursorword == ""
-    or #cursorword > 100
-    or #cursorword < M.options.cursorword.min_length
-    or string.find(cursorword, "[\192-\255]+") ~= nil
+    cword == ""
+    or #cword < M.options.cursorword.min_length
+    or string.find(cword, "[\192-\255]+") ~= nil
   then
     return
   end
-  local pattern = [[\<]] .. cursorword .. [[\>]]
-  w.cursorword_id = fn.matchadd("CursorWord", pattern, -1)
+
+  w.cursorword_id = vim.fn.matchaddpos("CursorWord", {{row, s, #cword}}, -1)
 end
 
 function M.setup(options)
+  w.cwordStart = -1 
+  w.cwordEnd = -1 
+
   M.options = vim.tbl_deep_extend("force", DEFAULT_OPTIONS, options or {})
-
-  if M.options.cursorline.enable then
-    wo.cursorline = true
-    au("WinEnter", {
-      callback = function()
-        wo.cursorline = true
-      end,
-    })
-    au("WinLeave", {
-      callback = function()
-        wo.cursorline = false
-      end,
-    })
-    au({ "CursorMoved", "CursorMovedI" }, {
-      callback = function()
-        if M.options.cursorline.number then
-          wo.cursorline = false
-        else
-          wo.cursorlineopt = "number"
-        end
-        timer:start(
-          M.options.cursorline.timeout,
-          0,
-          vim.schedule_wrap(function()
-            if M.options.cursorline.number then
-              wo.cursorline = true
-            else
-              wo.cursorlineopt = "both"
-            end
-          end)
-        )
-      end,
-    })
-  end
-
   if M.options.cursorword.enable then
     au("VimEnter", {
       callback = function()
-        hl(0, "CursorWord", M.options.cursorword.hl)
         matchadd()
       end,
     })
